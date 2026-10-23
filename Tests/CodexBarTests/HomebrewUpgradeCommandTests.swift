@@ -28,6 +28,70 @@ struct HomebrewUpgradeCommandTests {
         ])
     }
 
+    @Test(arguments: ["upgrade", "reinstall", "failed-reinstall", "stale-cask"])
+    func `update flow verifies the bundle before relaunching`(scenario: String) async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let contents = fixture.app.appendingPathComponent("Contents")
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        let plist = try PropertyListSerialization.data(
+            fromPropertyList: ["CFBundleShortVersionString": "0.77.0"], format: .xml, options: 0)
+        try plist.write(to: contents.appendingPathComponent("Info.plist"))
+        try #"{"source":{"tap":"steipete/tap","version":"0.80.0"}}"#
+            .write(to: fixture.receiptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(
+            at: fixture.owner.appendingPathComponent("bin/brew.app"), withDestinationURL: fixture.app)
+        let availableVersion = scenario == "stale-cask" ? "0.79.0" : "0.80.0"
+        try fixture.writeBrew("""
+        #!/bin/sh
+        printf '%s\\n' "$1" >> "$0.calls"
+        [ "$1" = update ] && exit 0
+        [ "$HOMEBREW_NO_AUTO_UPDATE" = 1 ] || exit 90
+        if [ "$1" = info ]; then
+            printf '%s' '{"casks":[{"token":"codexbar","tap":"steipete/tap",'
+            printf '%s' '"version":"\(availableVersion)","disabled":false}]}'
+            exit 0
+        fi
+        [ "$#" = 3 ] && [ "$2" = --cask ] && [ "$3" = steipete/tap/codexbar ] || exit 91
+        [ "$1" = upgrade ] && [ "\(scenario)" != upgrade ] && exit 0
+        [ "\(scenario)" = failed-reinstall ] && { printf 'reinstall failed' >&2; exit 7; }
+        /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.80.0' "$0.app/Contents/Info.plist"
+        """)
+        var relaunched = false
+        let updater = HomebrewUpdaterController(
+            savedAutoCheck: false,
+            dependencies: .init(
+                installedVersion: { HomebrewUpdaterController.Dependencies.bundleShortVersion(at: fixture.app) ?? "" },
+                fetchCaskSource: { "version \"0.80.0\"" },
+                runUpgrade: { target in
+                    _ = try await HomebrewUpdaterController.Dependencies.upgrade(
+                        appBundleURL: fixture.app, targetVersion: target, caskroomURLs: fixture.caskrooms)
+                },
+                relaunch: { relaunched = true },
+                cask: { .tap }),
+            startScheduledChecks: false)
+        await updater.performCheck()
+        #expect(updater.phase == .available("0.80.0"))
+        #expect(updater.updateStatus.availableVersion == "0.80.0")
+        await updater.performInstall()
+        let succeeds = scenario == "upgrade" || scenario == "reinstall"
+        #expect(relaunched == succeeds)
+        #expect(!updater.updateStatus.isInstalling)
+        #expect(updater.updateStatus.availableVersion == (succeeds ? nil : "0.80.0"))
+        #expect(HomebrewUpdaterController.Dependencies.bundleShortVersion(at: fixture.app)
+            == (succeeds ? "0.80.0" : "0.77.0"))
+        let expectedCalls = scenario == "upgrade" ? "update\nupgrade\n"
+            : "update\nupgrade\ninfo\n" + (scenario == "stale-cask" ? "" : "reinstall\n")
+        #expect(try String(contentsOf: fixture.callsURL, encoding: .utf8) == expectedCalls)
+        if scenario == "failed-reinstall" {
+            #expect(updater.phase == .failed("Command failed (7): reinstall failed"))
+        } else if scenario == "stale-cask" {
+            #expect(updater.phase == .failed(HomebrewUpdateError.invalidCaskResponse.localizedDescription))
+        } else {
+            #expect(updater.phase == .upToDate)
+        }
+    }
+
     @Test
     func `missing owning brew does not fall back to an unrelated installation`() async throws {
         let fixture = try Fixture()
