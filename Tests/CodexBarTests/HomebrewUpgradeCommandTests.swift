@@ -17,6 +17,11 @@ struct HomebrewUpgradeCommandTests {
             exit 0
         fi
         [ -f "$0.updated" ] || exit 9
+        if [ "$1" = info ]; then
+            printf '%s' '{"casks":[{"token":"codexbar","tap":"\(tap)",'
+            printf '%s' '"version":"0.66.0","installed":"0.65.0","disabled":false}]}'
+            exit 0
+        fi
         [ "$1" = upgrade ] || exit 10
         [ "$HOMEBREW_NO_AUTO_UPDATE" = 1 ] || exit 11
         printf '%s\\n' "$@" "$NONINTERACTIVE" "$HOMEBREW_NO_SUDO" "$HOMEBREW_NO_UPGRADE_QUIT_CASKS"
@@ -28,7 +33,7 @@ struct HomebrewUpgradeCommandTests {
         ])
     }
 
-    @Test(arguments: ["upgrade", "reinstall", "failed-reinstall", "stale-cask"])
+    @Test(arguments: ["upgrade", "reinstall", "failed-reinstall", "unchanged-reinstall", "stale-cask"])
     func `update flow verifies the bundle before relaunching`(scenario: String) async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
@@ -37,7 +42,8 @@ struct HomebrewUpgradeCommandTests {
         let plist = try PropertyListSerialization.data(
             fromPropertyList: ["CFBundleShortVersionString": "0.77.0"], format: .xml, options: 0)
         try plist.write(to: contents.appendingPathComponent("Info.plist"))
-        try #"{"source":{"tap":"steipete/tap","version":"0.80.0"}}"#
+        let receiptVersion = scenario == "upgrade" ? "0.77.0" : "0.80.0"
+        try "{\"source\":{\"tap\":\"steipete/tap\",\"version\":\"\(receiptVersion)\"}}"
             .write(to: fixture.receiptURL, atomically: true, encoding: .utf8)
         try FileManager.default.createSymbolicLink(
             at: fixture.owner.appendingPathComponent("bin/brew.app"), withDestinationURL: fixture.app)
@@ -49,12 +55,13 @@ struct HomebrewUpgradeCommandTests {
         [ "$HOMEBREW_NO_AUTO_UPDATE" = 1 ] || exit 90
         if [ "$1" = info ]; then
             printf '%s' '{"casks":[{"token":"codexbar","tap":"steipete/tap",'
-            printf '%s' '"version":"\(availableVersion)","disabled":false}]}'
+            printf '%s' '"version":"\(availableVersion)","installed":"\(receiptVersion)","disabled":false}]}'
             exit 0
         fi
         [ "$#" = 3 ] && [ "$2" = --cask ] && [ "$3" = steipete/tap/codexbar ] || exit 91
         [ "$1" = upgrade ] && [ "\(scenario)" != upgrade ] && exit 0
         [ "\(scenario)" = failed-reinstall ] && { printf 'reinstall failed' >&2; exit 7; }
+        [ "\(scenario)" = unchanged-reinstall ] && exit 0
         /usr/libexec/PlistBuddy -c 'Set :CFBundleShortVersionString 0.80.0' "$0.app/Contents/Info.plist"
         """)
         var relaunched = false
@@ -73,6 +80,7 @@ struct HomebrewUpgradeCommandTests {
         await updater.performCheck()
         #expect(updater.phase == .available("0.80.0"))
         #expect(updater.updateStatus.availableVersion == "0.80.0")
+        #expect(!FileManager.default.fileExists(atPath: fixture.callsURL.path))
         await updater.performInstall()
         let succeeds = scenario == "upgrade" || scenario == "reinstall"
         #expect(relaunched == succeeds)
@@ -80,11 +88,13 @@ struct HomebrewUpgradeCommandTests {
         #expect(updater.updateStatus.availableVersion == (succeeds ? nil : "0.80.0"))
         #expect(HomebrewUpdaterController.Dependencies.bundleShortVersion(at: fixture.app)
             == (succeeds ? "0.80.0" : "0.77.0"))
-        let expectedCalls = scenario == "upgrade" ? "update\nupgrade\n"
-            : "update\nupgrade\ninfo\n" + (scenario == "stale-cask" ? "" : "reinstall\n")
+        let expectedCalls = "update\ninfo\n" + (scenario == "stale-cask" ? ""
+            : scenario == "upgrade" ? "upgrade\n" : "reinstall\n")
         #expect(try String(contentsOf: fixture.callsURL, encoding: .utf8) == expectedCalls)
         if scenario == "failed-reinstall" {
             #expect(updater.phase == .failed("Command failed (7): reinstall failed"))
+        } else if scenario == "unchanged-reinstall" {
+            #expect(updater.phase == .failed(HomebrewUpdateError.versionUnchanged("0.77.0").localizedDescription))
         } else if scenario == "stale-cask" {
             #expect(updater.phase == .failed(HomebrewUpdateError.invalidCaskResponse.localizedDescription))
         } else {
