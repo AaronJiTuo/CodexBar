@@ -42,12 +42,23 @@ public enum UserProviderPluginMenuBarBalance {
         -> ProviderCostSnapshot?
     {
         guard showsOptionalCredits,
-              self.menuBarBalanceUsesPrepaidCost(for: instanceID),
               self.ownsSnapshot(instanceID: instanceID, snapshot: snapshot),
               let cost = snapshot?.providerCost,
-              cost.balance != nil
+              cost.balance != nil,
+              self.costAllowsMenuBarPrepaidBalance(cost: cost, instanceID: instanceID)
         else { return nil }
         return cost
+    }
+
+    private static func costAllowsMenuBarPrepaidBalance(
+        cost: ProviderCostSnapshot,
+        instanceID: ProviderInstanceID) -> Bool
+    {
+        switch cost.pluginMenuBarBalanceUsesPrepaidCost {
+        case true: true
+        case false: false
+        case nil: self.menuBarBalanceUsesPrepaidCost(for: instanceID)
+        }
     }
 
     private static func ownsSnapshot(instanceID: ProviderInstanceID, snapshot: UsageSnapshot?) -> Bool {

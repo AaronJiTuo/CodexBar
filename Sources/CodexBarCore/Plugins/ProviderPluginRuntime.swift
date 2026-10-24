@@ -598,7 +598,8 @@ final class JavaScriptCoreProviderPluginEngine: ProviderPluginEngine, @unchecked
                     provider: self.manifest.id,
                     now: now,
                     allowsProviderExtensions: !self.enforcesUserResponsePolicy,
-                    percentPolicy: self.manifest.percentPolicy)
+                    percentPolicy: self.manifest.percentPolicy,
+                    menuBarBalanceUsesPrepaidCost: self.manifest.menuBarBalanceUsesPrepaidCost)
                 completion(.success(snapshot))
             } catch {
                 completion(.failure(ProviderPluginError

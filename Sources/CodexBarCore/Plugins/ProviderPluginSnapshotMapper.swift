@@ -38,7 +38,8 @@ enum ProviderPluginSnapshotMapper {
         _ value: any ProviderPluginValue,
         provider: ProviderInstanceID,
         now: Date = Date(),
-        percentPolicy: ProviderPluginPercentPolicy = .clamp) throws -> UsageSnapshot
+        percentPolicy: ProviderPluginPercentPolicy = .clamp,
+        menuBarBalanceUsesPrepaidCost: Bool = false) throws -> UsageSnapshot
     {
         guard value.isObject, !value.isArray, !value.isNull else {
             throw ProviderPluginError.invalidSnapshot("fetchUsage must resolve to an object")
@@ -57,7 +58,10 @@ enum ProviderPluginSnapshotMapper {
         let secondary = try self.window(value, property: "secondary", percentPolicy: percentPolicy)
         let tertiary = try self.window(value, property: "tertiary", percentPolicy: percentPolicy)
         let extraRateWindows = try self.extraWindows(value, percentPolicy: percentPolicy)
-        let providerCost = try self.cost(value, now: now)
+        let providerCost = try self.cost(
+            value,
+            now: now,
+            menuBarBalanceUsesPrepaidCost: menuBarBalanceUsesPrepaidCost)
         let costUsage = try self.costUsage(value)
         let details = try self.details(value)
         let identity = try self.identity(value, provider: provider)
@@ -308,7 +312,11 @@ enum ProviderPluginSnapshotMapper {
         }
     }
 
-    private static func cost(_ root: any ProviderPluginValue, now: Date) throws -> ProviderCostSnapshot? {
+    private static func cost(
+        _ root: any ProviderPluginValue,
+        now: Date,
+        menuBarBalanceUsesPrepaidCost: Bool) throws -> ProviderCostSnapshot?
+    {
         guard let value = root.property("cost"), !value.isUndefined, !value.isNull else { return nil }
         guard value.isObject, !value.isArray else {
             throw ProviderPluginError.invalidSnapshot("cost must be an object")
@@ -331,6 +339,7 @@ enum ProviderPluginSnapshotMapper {
             resetsAt: resetsAt,
             nextRegenAmount: nextRegenAmount,
             balance: balance,
+            pluginMenuBarBalanceUsesPrepaidCost: menuBarBalanceUsesPrepaidCost,
             updatedAt: now)
     }
 

@@ -509,7 +509,8 @@ final class QuickJSProviderPluginEngine: ProviderPluginEngine, @unchecked Sendab
             provider: self.manifest.id,
             now: now,
             allowsProviderExtensions: !self.enforcesUserResponsePolicy,
-            percentPolicy: self.manifest.percentPolicy)
+            percentPolicy: self.manifest.percentPolicy,
+            menuBarBalanceUsesPrepaidCost: self.manifest.menuBarBalanceUsesPrepaidCost)
     }
 
     private func installHostFunctions(on host: JSValue) throws {

@@ -89,13 +89,19 @@ extension ProviderPluginSnapshotMapper {
         provider: ProviderInstanceID,
         now: Date,
         allowsProviderExtensions: Bool = true,
-        percentPolicy: ProviderPluginPercentPolicy = .clamp) throws -> ProviderPluginResult
+        percentPolicy: ProviderPluginPercentPolicy = .clamp,
+        menuBarBalanceUsesPrepaidCost: Bool = false) throws -> ProviderPluginResult
     {
         let keys = try self.objectKeys(value, path: "result")
         let envelope = keys.contains("usage")
         guard envelope else {
             return try ProviderPluginResult(
-                usage: self.map(value, provider: provider, now: now, percentPolicy: percentPolicy),
+                usage: self.map(
+                    value,
+                    provider: provider,
+                    now: now,
+                    percentPolicy: percentPolicy,
+                    menuBarBalanceUsesPrepaidCost: menuBarBalanceUsesPrepaidCost),
                 sourceLabel: nil,
                 persist: [:])
         }
@@ -106,7 +112,12 @@ extension ProviderPluginSnapshotMapper {
         guard let rawUsage = value.property("usage") else {
             throw ProviderPluginError.invalidSnapshot("usage is required")
         }
-        var usage = try self.map(rawUsage, provider: provider, now: now, percentPolicy: percentPolicy)
+        var usage = try self.map(
+            rawUsage,
+            provider: provider,
+            now: now,
+            percentPolicy: percentPolicy,
+            menuBarBalanceUsesPrepaidCost: menuBarBalanceUsesPrepaidCost)
         var sourceLabel: String?
         if keys.contains("sourceLabel"), let label = value.property("sourceLabel") {
             sourceLabel = try self.resultString(label, path: "sourceLabel")

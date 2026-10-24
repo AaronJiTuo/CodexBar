@@ -16,6 +16,8 @@ public struct ProviderCostSnapshot: Equatable, Codable, Sendable {
     public let personalUsed: Double?
     /// Remaining prepaid balance, when the provider exposes it separately from spend and budget.
     public let balance: Double?
+    /// User-plugin manifest `menuBarBalanceUsesPrepaidCost` stamped at fetch time; nil for native costs.
+    public let pluginMenuBarBalanceUsesPrepaidCost: Bool?
     /// Balance observation, including a confirmed absent or unavailable balance; independent of the budget age.
     public let balanceUpdatedAt: Date?
     /// Codex shared workspace provenance; nil for other providers and legacy balance observations.
@@ -35,6 +37,7 @@ public struct ProviderCostSnapshot: Equatable, Codable, Sendable {
         balance: Double? = nil,
         balanceUpdatedAt: Date? = nil,
         balanceIsWorkspace: Bool? = nil,
+        pluginMenuBarBalanceUsesPrepaidCost: Bool? = nil,
         updatedAt: Date)
     {
         self.used = used
@@ -47,6 +50,7 @@ public struct ProviderCostSnapshot: Equatable, Codable, Sendable {
         self.balance = balance
         self.balanceUpdatedAt = balanceUpdatedAt
         self.balanceIsWorkspace = balanceIsWorkspace
+        self.pluginMenuBarBalanceUsesPrepaidCost = pluginMenuBarBalanceUsesPrepaidCost
         self.updatedAt = updatedAt
         self.balanceIsUnavailable = nil
     }
@@ -91,6 +95,7 @@ public struct ProviderCostSnapshot: Equatable, Codable, Sendable {
             balance: balance,
             balanceUpdatedAt: balanceUpdatedAt,
             balanceIsWorkspace: balanceIsWorkspace,
+            pluginMenuBarBalanceUsesPrepaidCost: self.pluginMenuBarBalanceUsesPrepaidCost,
             updatedAt: self.updatedAt)
         result.balanceIsUnavailable = balanceIsUnavailable
         return result
