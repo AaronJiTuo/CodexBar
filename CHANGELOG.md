@@ -2,6 +2,10 @@
 
 ## 0.81.1 — Unreleased
 
+### Added
+
+- Plugins: opt in with `menuBarBalanceUsesPrepaidCost` to show `cost.balance` in the menu bar (Icon & percent and the Balance layout token), including non-USD currencies.
+
 ## 0.81.0 — 2026-10-24
 
 ### Highlights

@@ -82,6 +82,112 @@ extension StatusItemController {
         return wasCached
     }
 
+    func applyStoredMenuBarLayoutForUserPluginIfNeeded(
+        plugin: UserProviderPlugin,
+        snapshot: UsageSnapshot?,
+        statusItem: NSStatusItem,
+        now: Date = .init())
+        -> Bool?
+    {
+        let resolution = self.settings.menuBarLayoutResolutionForUserPlugin()
+        guard !resolution.usesLegacyRendering,
+              self.settings.menuBarIconStyle == .iconAndPercent,
+              let button = statusItem.button
+        else {
+            statusItem.length = NSStatusItem.variableLength
+            return nil
+        }
+
+        let icon = self.userPluginSwitcherIcon(for: plugin)
+        let data = self.userPluginMenuBarLayoutRenderData(
+            plugin: plugin,
+            snapshot: snapshot,
+            now: now)
+        let options = self.menuBarLayoutRenderOptions(
+            for: .codex,
+            button: button,
+            now: now)
+        let rendered = self.menuBarLayoutRenderer.render(
+            layout: resolution.layout,
+            data: data,
+            icon: icon,
+            options: options)
+        let expectedImagePosition: NSControl.ImagePosition = if rendered.statusImage != nil {
+            .imageOnly
+        } else if rendered.leadingIcon != nil {
+            rendered.attributedTitle.length > 0 ? .imageLeft : .imageOnly
+        } else {
+            .noImage
+        }
+        let expectedTitle = rendered.statusImage == nil ? rendered.attributedTitle : NSAttributedString()
+        let wasCached = button.image === (rendered.statusImage ?? rendered.leadingIcon)
+            && button.imagePosition == expectedImagePosition
+            && button.attributedTitle.isEqual(to: expectedTitle)
+        self.lastAppliedMergedIconRenderSignature = nil
+        statusItem.length = Self.applyMenuBarLayoutContent(rendered, for: button, gap: self.settings.menuBarLayoutGap)
+        return wasCached
+    }
+
+    func userPluginMenuBarLayoutRenderData(
+        plugin: UserProviderPlugin,
+        snapshot: UsageSnapshot?,
+        now: Date = .init())
+        -> MenuBarLayoutRenderData
+    {
+        let instanceID = plugin.manifest.id
+        let showsOptionalCredits = self.settings.showOptionalCreditsAndExtraUsage
+        let automaticWindow = snapshot?.primary ?? snapshot?.secondary ?? snapshot?.tertiary
+        let automatic = MenuBarLayoutRenderWindow(automaticWindow)
+        let balanceAmounts = UserProviderPluginMenuBarBalance.balanceAmountsUSD(
+            for: instanceID,
+            snapshot: snapshot,
+            showsOptionalCredits: showsOptionalCredits)
+        return MenuBarLayoutRenderData(
+            provider: .codex,
+            iconKey: plugin.sourceHash,
+            providerName: plugin.manifest.name,
+            accountLabel: {
+                guard !self.settings.hidePersonalInfo else { return nil }
+                let label = snapshot?.identity?.accountEmail?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard let label, !label.isEmpty else { return nil }
+                return label
+            }(),
+            laneLabels: MenuBarLayoutLaneLabels(provider: .codex, snapshot: snapshot),
+            primary: MenuBarLayoutRenderWindow(snapshot?.primary),
+            secondary: MenuBarLayoutRenderWindow(snapshot?.secondary),
+            tertiary: MenuBarLayoutRenderWindow(snapshot?.tertiary),
+            session: MenuBarLayoutRenderWindow(snapshot?.primary),
+            weekly: MenuBarLayoutRenderWindow(snapshot?.secondary),
+            scopedWeekly: nil,
+            scopedWeeklyTitle: nil,
+            automatic: automatic,
+            automaticText: StatusItemController.userPluginMenuBarLayoutAutomaticText(
+                instanceID: instanceID,
+                snapshot: snapshot,
+                automatic: automatic,
+                showsOptionalCredits: showsOptionalCredits),
+            sessionPace: nil,
+            weeklyPace: nil,
+            automaticPace: nil,
+            runsOut: nil,
+            balance: UserProviderPluginMenuBarBalance.balance(
+                for: instanceID,
+                snapshot: snapshot,
+                showsOptionalCredits: showsOptionalCredits),
+            costToday: nil,
+            cost30d: nil,
+            metrics: MenuBarLayoutRenderMetrics(
+                sessionPaceDelta: nil,
+                weeklyPaceDelta: nil,
+                automaticPaceDelta: nil,
+                runsOutMinutes: nil,
+                balanceRemainingUSD: balanceAmounts.remaining,
+                balanceUsedUSD: balanceAmounts.used,
+                costTodayUSD: nil,
+                cost30dUSD: nil))
+    }
+
     private var mergedIconPresentation: MergedIconPresentation {
         self.settings.mergedIconPresentation(
             activeProviders: self.store.enabledFirstPartyProvidersForDisplay(),

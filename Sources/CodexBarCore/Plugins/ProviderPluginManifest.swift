@@ -90,6 +90,8 @@ public struct ProviderPluginManifest: Sendable {
     public let capabilities: Set<ProviderPluginCapability>
     public let cookieDomains: Set<String>
     public let percentPolicy: ProviderPluginPercentPolicy
+    /// When true, `cost.balance` may appear in the menu bar and Balance layout token (opt-in).
+    public let menuBarBalanceUsesPrepaidCost: Bool
     public let cookiePolicy: ProviderPluginCookiePolicy?
     public var usesCookieJar: Bool {
         self.cookiePolicy != nil
@@ -148,6 +150,17 @@ public struct ProviderPluginManifest: Sendable {
             self.topLevel = topLevel.boolValue()
         } else {
             self.topLevel = true
+        }
+        if let menuBarBalance = definition.property("menuBarBalanceUsesPrepaidCost"),
+           !menuBarBalance.isUndefined, !menuBarBalance.isNull
+        {
+            guard menuBarBalance.isBoolean else {
+                throw ProviderPluginError.invalidManifest(
+                    "'menuBarBalanceUsesPrepaidCost' must be a boolean when present")
+            }
+            self.menuBarBalanceUsesPrepaidCost = menuBarBalance.boolValue()
+        } else {
+            self.menuBarBalanceUsesPrepaidCost = false
         }
 
         let endpointValue = definition.property("endpoints")

@@ -234,6 +234,39 @@ extension StatusItemController {
         image.isTemplate = true
         return image
     }
+
+    /// Brand + percent title for a merged user plugin when legacy rendering is active.
+    nonisolated static func userPluginMenuBarBrandTitle(
+        instanceID: ProviderInstanceID,
+        snapshot: UsageSnapshot?,
+        showUsed: Bool,
+        showsOptionalCredits: Bool) -> String
+    {
+        if let percent = self.pluginSwitcherMetricPercent(snapshot: snapshot, showUsed: showUsed) {
+            return UsageFormatter.percentString(percent)
+        }
+        if let balance = UserProviderPluginMenuBarBalance.balance(
+            for: instanceID,
+            snapshot: snapshot,
+            showsOptionalCredits: showsOptionalCredits)
+        {
+            return balance
+        }
+        return "—"
+    }
+
+    nonisolated static func userPluginMenuBarLayoutAutomaticText(
+        instanceID: ProviderInstanceID,
+        snapshot: UsageSnapshot?,
+        automatic: MenuBarLayoutRenderWindow?,
+        showsOptionalCredits: Bool) -> String?
+    {
+        guard automatic == nil else { return nil }
+        return UserProviderPluginMenuBarBalance.balance(
+            for: instanceID,
+            snapshot: snapshot,
+            showsOptionalCredits: showsOptionalCredits)
+    }
 }
 
 struct UserPluginQuotaPresentation: Equatable {

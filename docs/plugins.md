@@ -23,7 +23,8 @@ work to finish and reads the current configuration when its fetch starts. Displa
 When icons are merged and the source is **Current selection**, selecting a user plugin also selects its menu-bar
 quota. It uses the same quota as the switcher gauge: the most-used seven-day window, or the first available window.
 Before usage arrives, the plugin remains selected with unavailable usage. Other merged-icon sources retain their
-built-in provider behavior.
+built-in provider behavior. Plugins that set `menuBarBalanceUsesPrepaidCost: true` can show `cost.balance` in Icon &
+percent mode (including the Balance layout token) instead of faking a percent window when the provider is balance-only.
 
 ## Bundled provider registration
 
@@ -146,6 +147,7 @@ defineProvider({
   positive `width`/`height` (numbers or `px`); partial dimensions and other canvas units fall back to the monogram.
   File icons are not supported.
 - `topLevel` (optional, default `true`): gives an enabled plugin its own provider-switcher tab when Merge Icons is on. Set to `false` to keep an appended card.
+- `menuBarBalanceUsesPrepaidCost` (optional, default `false`): opts into menu-bar balance text from `cost.balance`, using the snapshot currency (for example `CN¥9.21` for CNY). Applies when Icon & percent is active and the user’s custom layout includes the Balance token, or when no rate window is available for the legacy brand title. Plugins that omit this flag keep percent-only menu-bar behavior even when `cost.balance` is present.
   Plugin tabs show a quota gauge from the most constrained reported seven-day window, otherwise the first available
   primary, secondary, tertiary, or extra window. They follow the used/remaining display preference; unknown usage
   stays unavailable. Merged meter icons use the primary window for the thick lane and the secondary window for the

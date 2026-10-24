@@ -455,6 +455,18 @@ extension SettingsStore {
             provider: provider)
     }
 
+    /// User plugins share the global stored layout and do not have per-provider overrides or metric prefs.
+    func menuBarLayoutResolutionForUserPlugin() -> MenuBarLayoutResolution {
+        if let stored = self.defaultsState.storedMenuBarLayout {
+            return .stored(stored)
+        }
+        return .legacy(
+            displayMode: self.menuBarDisplayMode,
+            metricPreference: .automatic,
+            resetTimeDisplayStyle: self.resetTimeDisplayStyle,
+            provider: .codex)
+    }
+
     func setMenuBarLayout(_ layout: MenuBarLayout, for provider: UsageProvider?) {
         if let provider {
             self.defaultsState.menuBarLayoutOverridesRaw[provider.rawValue] = layout

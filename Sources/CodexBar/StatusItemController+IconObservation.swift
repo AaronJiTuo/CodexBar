@@ -49,10 +49,26 @@ extension StatusItemController {
         for instanceID: ProviderInstanceID, showBrandPercent: Bool) -> String
     {
         guard let provider = instanceID.firstPartyProvider else {
-            let percent = Self.pluginSwitcherMetricPercent(
-                snapshot: self.store.menuBarSnapshot(for: instanceID), showUsed: self.settings.usageBarsShowUsed)
+            let snapshot = self.store.menuBarSnapshot(for: instanceID)
+            let showUsed = self.settings.usageBarsShowUsed
+            let percent = Self.pluginSwitcherMetricPercent(snapshot: snapshot, showUsed: showUsed)
+            let balance = UserProviderPluginMenuBarBalance.balance(
+                for: instanceID,
+                snapshot: snapshot,
+                showsOptionalCredits: self.settings.showOptionalCreditsAndExtraUsage)
+            let title = Self.userPluginMenuBarBrandTitle(
+                instanceID: instanceID,
+                snapshot: snapshot,
+                showUsed: showUsed,
+                showsOptionalCredits: self.settings.showOptionalCreditsAndExtraUsage)
             let source = UserProviderPluginRegistry.plugin(for: instanceID)?.sourceHash ?? ""
+            let layoutBalance = showBrandPercent
+                ? self.storedUserPluginMenuBarLayoutBalanceSignature(
+                    instanceID: instanceID,
+                    snapshot: snapshot)
+                : nil
             return "\(instanceID.rawValue)|percent=\(Self.iconSignatureValue(percent))" +
+                "|balance=\(balance ?? "nil")|text=\(title)|layoutBalance=\(layoutBalance ?? "nil")" +
                 "|error=\(self.store.errors[instanceID] != nil)|source=\(source)"
         }
         let snapshot = self.menuBarUsageSource(for: provider).snapshot
@@ -178,6 +194,34 @@ extension StatusItemController {
             // threshold while both format to the same cent, so a conditional also signs the numbers.
             "todayUSD=\(metrics.contains(.costToday) ? Self.exactSignatureValue(costs.todayUSD) : "unused")",
             "last30DaysUSD=\(metrics.contains(.costWindow) ? Self.exactSignatureValue(costs.last30DaysUSD) : "unused")",
+        ].joined(separator: ",")
+    }
+
+    private func storedUserPluginMenuBarLayoutBalanceSignature(
+        instanceID: ProviderInstanceID,
+        snapshot: UsageSnapshot?)
+        -> String?
+    {
+        let resolution = self.settings.menuBarLayoutResolutionForUserPlugin()
+        guard !resolution.usesLegacyRendering else { return nil }
+        let showsBalance = resolution.layout
+            .flattenedTokens(conditionals: self.settings.menuBarLayoutConditionals)
+            .contains(.balance)
+            || self.referencedConditionalMetrics(resolution: resolution).contains(.balance)
+        guard showsBalance else { return nil }
+        let showsOptionalCredits = self.settings.showOptionalCreditsAndExtraUsage
+        let amounts = UserProviderPluginMenuBarBalance.balanceAmountsUSD(
+            for: instanceID,
+            snapshot: snapshot,
+            showsOptionalCredits: showsOptionalCredits)
+        let balanceText = UserProviderPluginMenuBarBalance.balance(
+            for: instanceID,
+            snapshot: snapshot,
+            showsOptionalCredits: showsOptionalCredits)
+        return [
+            "remaining=\(Self.exactSignatureValue(amounts.remaining))",
+            "used=\(Self.exactSignatureValue(amounts.used))",
+            "text=\(balanceText ?? "nil")",
         ].joined(separator: ",")
     }
 

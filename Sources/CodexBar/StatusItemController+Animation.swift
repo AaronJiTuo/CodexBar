@@ -267,11 +267,19 @@ extension StatusItemController {
             guard let plugin = UserProviderPluginRegistry.plugin(for: selected) else { return false }
             let snapshot = self.store.menuBarSnapshot(for: selected)
             let showUsed = self.settings.usageBarsShowUsed
-            let percent = Self.pluginSwitcherMetricPercent(snapshot: snapshot, showUsed: showUsed)
             let lanes = Self.pluginMeterPercents(snapshot: snapshot, showUsed: showUsed)
             let showBrand = self.settings.menuBarShowsBrandIconWithPercent
             // Returning to a built-in provider must redraw even if its last quota is unchanged.
             self.lastAppliedMergedIconRenderSignature = nil
+            if showBrand,
+               let wasCached = self.applyStoredMenuBarLayoutForUserPluginIfNeeded(
+                   plugin: plugin,
+                   snapshot: snapshot,
+                   statusItem: self.statusItem)
+            {
+                self.noteIconPerfRender(skipped: wasCached)
+                return wasCached
+            }
             let image = showBrand ? self.userPluginSwitcherIcon(for: plugin) : IconRenderer.makeIcon(
                 primaryRemaining: lanes.primary,
                 weeklyRemaining: lanes.secondary,
@@ -280,9 +288,16 @@ extension StatusItemController {
                 style: .combined,
                 hideCritters: true)
             self.statusItem.length = NSStatusItem.variableLength
+            let showsOptionalCredits = self.settings.showOptionalCreditsAndExtraUsage
             self.setButtonContent(
                 image: image,
-                title: showBrand ? percent.map(UsageFormatter.percentString) ?? "—" : nil,
+                title: showBrand
+                    ? Self.userPluginMenuBarBrandTitle(
+                        instanceID: selected,
+                        snapshot: snapshot,
+                        showUsed: showUsed,
+                        showsOptionalCredits: showsOptionalCredits)
+                    : nil,
                 tint: nil,
                 for: button)
             self.noteIconPerfRender(skipped: false)

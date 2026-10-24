@@ -312,6 +312,11 @@ interface CodexBarProviderDefinition {
   icon?: { monogram?: string; tint?: string; svg?: string };
   /** Defaults to true: a switcher tab when Merge Icons is on. False keeps an appended card. */
   topLevel?: boolean;
+  /**
+   * When true, `cost.balance` may appear in the menu bar (Icon & percent and custom layouts) and the
+   * Balance layout token. Off by default; plugins without rate windows can surface balance-only text.
+   */
+  menuBarBalanceUsesPrepaidCost?: boolean;
   endpoints: CodexBarEndpoint[];
   auth?: CodexBarAuth;
   settings: CodexBarSetting[];
