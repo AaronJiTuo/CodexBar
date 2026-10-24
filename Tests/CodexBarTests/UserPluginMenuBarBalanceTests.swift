@@ -104,7 +104,7 @@ import Testing
             settings: [:],
             secrets: [:],
             approvalStore: fixture.approvals)
-        let automatic = MenuBarLayoutRenderWindow(snapshot?.primary)
+        let automatic = MenuBarLayoutRenderWindow(snapshot.primary)
         #expect(StatusItemController.userPluginMenuBarLayoutAutomaticText(
             instanceID: plugin.manifest.id,
             snapshot: snapshot,
