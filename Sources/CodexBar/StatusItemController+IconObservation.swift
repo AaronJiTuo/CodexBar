@@ -51,6 +51,40 @@ extension StatusItemController {
         guard let provider = instanceID.firstPartyProvider else {
             let snapshot = self.store.menuBarSnapshot(for: instanceID)
             let showUsed = self.settings.usageBarsShowUsed
+            let plugin = UserProviderPluginRegistry.plugin(for: instanceID)
+            let source = plugin?.sourceHash ?? ""
+            let usesStoredLayout = showBrandPercent
+                && (plugin.map { self.userPluginUsesStoredMenuBarLayout($0) } ?? false)
+            if usesStoredLayout {
+                let windows = self.userPluginMenuBarLayoutWindows(snapshot: snapshot)
+                let automaticPercent = Self.pluginSwitcherMetricPercent(snapshot: snapshot, showUsed: showUsed)
+                let layoutBalance = self.storedUserPluginMenuBarLayoutBalanceSignature(
+                    instanceID: instanceID,
+                    snapshot: snapshot)
+                let layoutAccount = self.storedUserPluginMenuBarLayoutAccountSignature(snapshot: snapshot)
+                let layoutLanes = self.storedUserPluginMenuBarLayoutLaneSignature(
+                    snapshot: snapshot,
+                    windows: windows)
+                let layoutResets = self.storedUserPluginMenuBarLayoutResetSignature(snapshot: snapshot, windows: windows)
+                let layoutCondWindows = self.storedUserPluginMenuBarLayoutConditionalWindowSignature(
+                    snapshot: snapshot,
+                    windows: windows)
+                return [
+                    instanceID.rawValue,
+                    "automatic=\(Self.iconSignatureValue(automaticPercent))",
+                    "primary=\(Self.iconSignatureValue(Self.pluginWindowIconPercent(windows.primary, showUsed: showUsed)))",
+                    "weekly=\(Self.iconSignatureValue(Self.pluginWindowIconPercent(windows.weekly, showUsed: showUsed)))",
+                    "secondary=\(Self.iconSignatureValue(Self.pluginWindowIconPercent(windows.secondary, showUsed: showUsed)))",
+                    "tertiary=\(Self.iconSignatureValue(Self.pluginWindowIconPercent(windows.tertiary, showUsed: showUsed)))",
+                    "stale=\(self.store.errors[instanceID] != nil ? "1" : "0")",
+                    "layoutBalance=\(layoutBalance ?? "nil")",
+                    "layoutAccount=\(layoutAccount ?? "nil")",
+                    "layoutLanes=\(layoutLanes ?? "nil")",
+                    "layoutResets=\(layoutResets ?? "nil")",
+                    "layoutCondWindows=\(layoutCondWindows ?? "nil")",
+                    "source=\(source)",
+                ].joined(separator: "|")
+            }
             let percent = Self.pluginSwitcherMetricPercent(snapshot: snapshot, showUsed: showUsed)
             let balance = UserProviderPluginMenuBarBalance.balance(
                 for: instanceID,
@@ -61,14 +95,8 @@ extension StatusItemController {
                 snapshot: snapshot,
                 showUsed: showUsed,
                 showsOptionalCredits: self.settings.showOptionalCreditsAndExtraUsage)
-            let source = UserProviderPluginRegistry.plugin(for: instanceID)?.sourceHash ?? ""
-            let layoutBalance = showBrandPercent
-                ? self.storedUserPluginMenuBarLayoutBalanceSignature(
-                    instanceID: instanceID,
-                    snapshot: snapshot)
-                : nil
             return "\(instanceID.rawValue)|percent=\(Self.iconSignatureValue(percent))" +
-                "|balance=\(balance ?? "nil")|text=\(title)|layoutBalance=\(layoutBalance ?? "nil")" +
+                "|balance=\(balance ?? "nil")|text=\(title)|layoutBalance=nil" +
                 "|error=\(self.store.errors[instanceID] != nil)|source=\(source)"
         }
         let snapshot = self.menuBarUsageSource(for: provider).snapshot
@@ -453,5 +481,93 @@ extension StatusItemController {
     private static func exactSignatureValue(_ value: Double?) -> String {
         guard let value else { return "nil" }
         return String(value.bitPattern)
+    }
+
+    private static func pluginWindowIconPercent(_ window: RateWindow?, showUsed: Bool) -> Double? {
+        guard let window else { return nil }
+        return showUsed ? window.usedPercent : window.remainingPercent
+    }
+
+    private func storedUserPluginMenuBarLayoutAccountSignature(snapshot: UsageSnapshot?) -> String? {
+        let resolution = self.settings.menuBarLayoutResolutionForUserPlugin()
+        guard !resolution.usesLegacyRendering,
+              resolution.layout.flattenedTokens(conditionals: self.settings.menuBarLayoutConditionals)
+                  .contains(.accountLabel),
+              let accountLabel = self.userPluginMenuBarLayoutAccountLabel(snapshot: snapshot)
+        else { return nil }
+        var hasher = Hasher()
+        hasher.combine(accountLabel)
+        return String(hasher.finalize())
+    }
+
+    private func storedUserPluginMenuBarLayoutLaneSignature(
+        snapshot: UsageSnapshot?,
+        windows: MenuBarLayoutWindows) -> String?
+    {
+        let resolution = self.settings.menuBarLayoutResolutionForUserPlugin()
+        guard !resolution.usesLegacyRendering else { return nil }
+        let tokens = resolution.layout.flattenedTokens(conditionals: self.settings.menuBarLayoutConditionals)
+        let lanes = Set(tokens.compactMap(\.selectedLane))
+        guard !lanes.isEmpty else { return nil }
+        let showUsed = self.settings.usageBarsShowUsed
+        return MenuBarLayoutLane.allCases
+            .filter(lanes.contains)
+            .map { lane in
+                let window: RateWindow? = switch lane {
+                case .primary: windows.primary
+                case .secondary: windows.secondary
+                case .tertiary: windows.tertiary
+                }
+                return "\(lane.rawValue)=\(Self.iconSignatureValue(Self.pluginWindowIconPercent(window, showUsed: showUsed)))"
+            }
+            .joined(separator: ",")
+    }
+
+    private func storedUserPluginMenuBarLayoutResetSignature(
+        snapshot: UsageSnapshot?,
+        windows: MenuBarLayoutWindows) -> String?
+    {
+        let resolution = self.settings.menuBarLayoutResolutionForUserPlugin()
+        guard !resolution.usesLegacyRendering else { return nil }
+        let selections = Set(resolution.layout
+            .flattenedTokens(conditionals: self.settings.menuBarLayoutConditionals).compactMap(\.resetWindow))
+        guard !selections.isEmpty else { return nil }
+        var hasher = Hasher()
+        for selection in PercentWindow.allCases where selections.contains(selection) {
+            let window = windows.resetWindow(selection, snapshot: snapshot)
+            hasher.combine(selection)
+            hasher.combine(window?.resetsAt)
+            hasher.combine(window?.resetDescription)
+        }
+        return String(hasher.finalize())
+    }
+
+    private func storedUserPluginMenuBarLayoutConditionalWindowSignature(
+        snapshot: UsageSnapshot?,
+        windows: MenuBarLayoutWindows) -> String?
+    {
+        let resolution = self.settings.menuBarLayoutResolutionForUserPlugin()
+        guard !resolution.usesLegacyRendering else { return nil }
+        let metrics = self.referencedConditionalMetrics(resolution: resolution).filter(\.readsRateWindow)
+        guard !metrics.isEmpty else { return nil }
+        return MenuBarConditionalMetric.allCases
+            .filter(metrics.contains)
+            .map { metric in
+                let window: RateWindow? = switch metric {
+                case .session, .sessionResetsIn: windows.session
+                case .weekly, .weeklyResetsIn: windows.weekly
+                case .scopedWeekly, .scopedWeeklyResetsIn: nil
+                case .automatic, .automaticResetsIn: windows.automatic
+                case .spend, .spendResetsIn: windows.spend
+                case .primaryLane: windows.primary
+                case .secondaryLane: windows.secondary
+                case .tertiaryLane: windows.tertiary
+                default: nil
+                }
+                let resetsAt = window?.resetsAt?.timeIntervalSince1970
+                return "\(metric.rawValue)=\(Self.iconSignatureValue(window?.usedPercent))" +
+                    "@\(Self.exactSignatureValue(resetsAt))"
+            }
+            .joined(separator: ",")
     }
 }

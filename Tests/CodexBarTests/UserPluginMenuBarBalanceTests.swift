@@ -1,4 +1,5 @@
 @testable import CodexBar
+import AppKit
 import CodexBarCore
 import Foundation
 import Testing
@@ -43,6 +44,46 @@ import Testing
         #expect(StatusItemController.pluginSwitcherMetricPercent(snapshot: snapshot, showUsed: false) == nil)
     }
 
+    @MainActor
+    @Test
+    func `undeclared plugin keeps legacy menu bar path without stored layout`() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let plugin = try Self.loadPlugin(
+            fixture: fixture,
+            name: "legacy-meter.js",
+            source: """
+            defineProvider({
+              id: "legacy-meter",
+              name: "Legacy Meter",
+              endpoints: ["https://legacy-meter.example"],
+              settings: [],
+              fetchUsage() { return { primary: { usedPercent: 50, windowMinutes: 300 } }; },
+            });
+            """)
+        let settings = testSettingsStore(suiteName: "UserPluginMenuBarBalanceTests-legacy-path")
+        settings.menuBarIconStyle = .iconAndPercent
+        settings.menuBarLayout = MenuBarLayout(lines: [[.balance]])
+        let fetcher = UsageFetcher()
+        let store = UsageStore(
+            fetcher: fetcher,
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings)
+        let controller = StatusItemController(
+            store: store,
+            settings: settings,
+            account: fetcher.loadAccountInfo(),
+            updater: DisabledUpdaterController(),
+            preferencesSelection: PreferencesSelection(),
+            statusBar: testStatusBar())
+        defer { controller.releaseStatusItemsForTesting() }
+        #expect(!controller.userPluginUsesStoredMenuBarLayout(plugin))
+        #expect(controller.applyStoredMenuBarLayoutForUserPluginIfNeeded(
+            plugin: plugin,
+            snapshot: nil,
+            statusItem: controller.statusItem) == nil)
+    }
+
     @Test
     func `undeclared plugin keeps balance out of menu bar text`() async throws {
         let fixture = try Fixture()
@@ -74,6 +115,203 @@ import Testing
             snapshot: snapshot,
             showUsed: false,
             showsOptionalCredits: true) == "—")
+    }
+
+    @Test
+    func `legacy provider cost snapshot decodes without plugin balance opt in field`() throws {
+        let json = """
+        {"used":1,"limit":10,"currencyCode":"USD","updatedAt":"2020-01-01T00:00:00Z"}
+        """
+        let decoded = try JSONDecoder().decode(ProviderCostSnapshot.self, from: Data(json.utf8))
+        #expect(decoded.pluginMenuBarBalanceUsesPrepaidCost == nil)
+        #expect(decoded.balance == nil)
+    }
+
+    @Test
+    func `stored layout windows use plugin automatic quota selection`() throws {
+        let snapshot = UsageSnapshot(
+            primary: RateWindow(usedPercent: 20, windowMinutes: 300, resetsAt: nil, resetDescription: nil),
+            secondary: RateWindow(usedPercent: 65, windowMinutes: 10080, resetsAt: nil, resetDescription: nil),
+            updatedAt: .distantPast)
+        let windows = StatusItemController.userPluginMenuBarLayoutWindows(snapshot: snapshot)
+        #expect(windows.automatic?.usedPercent == 65)
+        #expect(StatusItemController.pluginSwitcherMetricPercent(snapshot: snapshot, showUsed: false) == 35)
+        let automatic = MenuBarLayoutRenderWindow(windows.automatic)
+        let instanceID = try #require(ProviderInstanceID(rawValue: "fixture-meter"))
+        #expect(StatusItemController.userPluginMenuBarLayoutAutomaticText(
+            instanceID: instanceID,
+            snapshot: snapshot,
+            automatic: automatic,
+            showsOptionalCredits: true) == nil)
+    }
+
+    @MainActor
+    @Test
+    func `opt in plugin layout reset dates use plugin automatic windows`() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let plugin = try Self.loadPlugin(
+            fixture: fixture,
+            name: "reset-meter.js",
+            source: """
+            defineProvider({
+              id: "reset-meter",
+              name: "Reset Meter",
+              menuBarBalanceUsesPrepaidCost: true,
+              endpoints: ["https://reset-meter.example"],
+              settings: [],
+              fetchUsage() { return { primary: { usedPercent: 10, windowMinutes: 300 } }; },
+            });
+            """)
+        let settings = testSettingsStore(suiteName: "UserPluginMenuBarBalanceTests-reset-dates")
+        settings.statusChecksEnabled = false
+        settings.refreshFrequency = .manual
+        settings.mergeIcons = true
+        settings.menuBarShowsBrandIconWithPercent = true
+        settings.menuBarIconStyle = .iconAndPercent
+        settings.menuBarLayout = MenuBarLayout(lines: [[.windowResetCountdown(window: .automatic)]])
+        settings.selectedMenuProvider = plugin.manifest.id
+        let fetcher = UsageFetcher()
+        let store = UsageStore(
+            fetcher: fetcher,
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings)
+        let controller = StatusItemController(
+            store: store,
+            settings: settings,
+            account: fetcher.loadAccountInfo(),
+            updater: DisabledUpdaterController(),
+            preferencesSelection: PreferencesSelection(),
+            statusBar: testStatusBar())
+        defer { controller.releaseStatusItemsForTesting() }
+        let now = Date()
+        let resetAt = now.addingTimeInterval(3605)
+        let snapshot = UsageSnapshot(
+            primary: RateWindow(
+                usedPercent: 10,
+                windowMinutes: 300,
+                resetsAt: resetAt,
+                resetDescription: nil),
+            updatedAt: now)
+        store.snapshots[plugin.manifest.id] = snapshot
+        #expect(controller.userPluginUsesStoredMenuBarLayout(plugin))
+        let dates = controller.userPluginMenuBarLayoutResetDates(snapshot: snapshot, now: now, absolute: false)
+        #expect(dates == [resetAt])
+        controller.scheduleMenuBarCountdownRefreshIfNeeded(now: now)
+        #expect(controller._test_isMenuBarCountdownRefreshScheduled())
+    }
+
+    @MainActor
+    @Test
+    func `stored layout observation signature tracks secondary lane percent`() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let plugin = try Self.loadPlugin(
+            fixture: fixture,
+            name: "observe-meter.js",
+            source: """
+            defineProvider({
+              id: "observe-meter",
+              name: "Observe Meter",
+              menuBarBalanceUsesPrepaidCost: true,
+              endpoints: ["https://observe-meter.example"],
+              settings: [],
+              fetchUsage() { return {}; },
+            });
+            """)
+        let settings = testSettingsStore(suiteName: "UserPluginMenuBarBalanceTests-observe")
+        settings.statusChecksEnabled = false
+        settings.mergeIcons = true
+        settings.menuBarShowsBrandIconWithPercent = true
+        settings.menuBarIconStyle = .iconAndPercent
+        settings.menuBarLayout = MenuBarLayout(lines: [[.lanePercent(lane: .secondary)]])
+        settings.selectedMenuProvider = plugin.manifest.id
+        let fetcher = UsageFetcher()
+        let store = UsageStore(
+            fetcher: fetcher,
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings)
+        let controller = StatusItemController(
+            store: store,
+            settings: settings,
+            account: fetcher.loadAccountInfo(),
+            updater: DisabledUpdaterController(),
+            preferencesSelection: PreferencesSelection(),
+            statusBar: testStatusBar())
+        defer { controller.releaseStatusItemsForTesting() }
+        let base = UsageSnapshot(
+            primary: RateWindow(usedPercent: 20, windowMinutes: 300, resetsAt: nil, resetDescription: nil),
+            secondary: RateWindow(usedPercent: 40, windowMinutes: 10080, resetsAt: nil, resetDescription: nil),
+            updatedAt: Date())
+        store.snapshots[plugin.manifest.id] = base
+        let first = controller.storeIconObservationSignature()
+        store.snapshots[plugin.manifest.id] = UsageSnapshot(
+            primary: base.primary,
+            secondary: RateWindow(usedPercent: 55, windowMinutes: 10080, resetsAt: nil, resetDescription: nil),
+            updatedAt: Date())
+        let second = controller.storeIconObservationSignature()
+        #expect(first != second)
+        #expect(first.contains("secondary=60.000"))
+        #expect(second.contains("secondary=45.000"))
+    }
+
+    @MainActor
+    @Test
+    func `user plugin layout render data avoids codex tint and uses plugin identity`() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let plugin = try Self.loadPlugin(
+            fixture: fixture,
+            name: "identity-meter.js",
+            source: """
+            defineProvider({
+              id: "identity-meter",
+              name: "Identity Meter",
+              menuBarBalanceUsesPrepaidCost: true,
+              endpoints: ["https://identity-meter.example"],
+              settings: [],
+              fetchUsage() {
+                return {
+                  identity: { accountEmail: "meter@example.com" },
+                  cost: { used: 0, currency: "USD", balance: 3 },
+                };
+              },
+            });
+            """)
+        let settings = testSettingsStore(suiteName: "UserPluginMenuBarBalanceTests-identity")
+        settings.hidePersonalInfo = false
+        let fetcher = UsageFetcher()
+        let store = UsageStore(
+            fetcher: fetcher,
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings)
+        let controller = StatusItemController(
+            store: store,
+            settings: settings,
+            account: fetcher.loadAccountInfo(),
+            updater: DisabledUpdaterController(),
+            preferencesSelection: PreferencesSelection(),
+            statusBar: testStatusBar())
+        defer { controller.releaseStatusItemsForTesting() }
+        let snapshot = try await plugin.fetchUsage(settings: [:], secrets: [:], approvalStore: fixture.approvals)
+        store.snapshots[plugin.manifest.id] = snapshot
+        let data = controller.userPluginMenuBarLayoutRenderData(plugin: plugin, snapshot: snapshot)
+        #expect(data.provider == .synthetic)
+        #expect(data.providerName == "Identity Meter")
+        #expect(data.accountLabel == "meter@example.com")
+        let button = try #require(controller.statusItem.button)
+        let options = controller.menuBarLayoutRenderOptionsForUserPlugin(
+            instanceID: plugin.manifest.id,
+            button: button,
+            now: Date())
+        #expect(options.colorByProvider == false)
+        #expect(options.isStale == false)
+        store.errors[plugin.manifest.id] = "offline"
+        let staleOptions = controller.menuBarLayoutRenderOptionsForUserPlugin(
+            instanceID: plugin.manifest.id,
+            button: button,
+            now: Date())
+        #expect(staleOptions.isStale)
     }
 
     @Test

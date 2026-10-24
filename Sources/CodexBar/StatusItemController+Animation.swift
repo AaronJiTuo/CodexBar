@@ -272,6 +272,7 @@ extension StatusItemController {
             // Returning to a built-in provider must redraw even if its last quota is unchanged.
             self.lastAppliedMergedIconRenderSignature = nil
             if showBrand,
+               plugin.manifest.menuBarBalanceUsesPrepaidCost,
                let wasCached = self.applyStoredMenuBarLayoutForUserPluginIfNeeded(
                    plugin: plugin,
                    snapshot: snapshot,

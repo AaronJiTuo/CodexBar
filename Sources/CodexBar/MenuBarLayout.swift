@@ -502,6 +502,17 @@ struct MenuBarLayoutLaneLabels: Hashable {
         self.tertiary = L(labels?.tertiary ?? descriptor.metadata.opusLabel ?? "Tertiary")
     }
 
+    init(userPluginSnapshot: UsageSnapshot?) {
+        self.primary = Self.userPluginLaneTitle(userPluginSnapshot?.primary, fallback: "Primary")
+        self.secondary = Self.userPluginLaneTitle(userPluginSnapshot?.secondary, fallback: "Secondary")
+        self.tertiary = Self.userPluginLaneTitle(userPluginSnapshot?.tertiary, fallback: "Tertiary")
+    }
+
+    private static func userPluginLaneTitle(_ window: RateWindow?, fallback: String) -> String {
+        let trimmed = window?.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed?.isEmpty == false ? trimmed! : L(fallback)
+    }
+
     func label(for lane: MenuBarLayoutLane) -> String {
         switch lane {
         case .primary: self.primary

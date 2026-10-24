@@ -13,15 +13,35 @@ extension StatusItemController {
             lanes.secondary.map { min(100, max(0, $0)) })
     }
 
-    nonisolated static func pluginSwitcherMetricPercent(snapshot: UsageSnapshot?, showUsed: Bool) -> Double? {
-        let windows = ([snapshot?.primary, snapshot?.secondary, snapshot?.tertiary].compactMap(\.self) +
-            (snapshot?.extraRateWindows ?? []).filter(\.usageKnown).map(\.window))
-            .filter(\.usedPercent.isFinite)
+    nonisolated static func pluginSwitcherMetricRateWindow(snapshot: UsageSnapshot?) -> RateWindow? {
+        let windows = self.pluginSelectableRateWindows(snapshot: snapshot)
         let weekly = windows.filter { $0.windowMinutes == 7 * 24 * 60 }
             .max { $0.usedPercent < $1.usedPercent }
-        guard let window = weekly ?? windows.first else { return nil }
+        return weekly ?? windows.first
+    }
+
+    nonisolated static func pluginSwitcherMetricPercent(snapshot: UsageSnapshot?, showUsed: Bool) -> Double? {
+        guard let window = self.pluginSwitcherMetricRateWindow(snapshot: snapshot) else { return nil }
         let used = min(100, max(0, window.usedPercent))
         return showUsed ? used : 100 - used
+    }
+
+    nonisolated static func userPluginMenuBarLayoutWindows(snapshot: UsageSnapshot?) -> MenuBarLayoutWindows {
+        let automatic = self.pluginSwitcherMetricRateWindow(snapshot: snapshot)
+        return MenuBarLayoutWindows(
+            primary: snapshot?.primary,
+            secondary: snapshot?.secondary,
+            tertiary: snapshot?.tertiary,
+            session: snapshot?.primary,
+            weekly: automatic?.windowMinutes == 7 * 24 * 60 ? automatic : snapshot?.secondary,
+            automatic: automatic,
+            spend: nil)
+    }
+
+    private nonisolated static func pluginSelectableRateWindows(snapshot: UsageSnapshot?) -> [RateWindow] {
+        ([snapshot?.primary, snapshot?.secondary, snapshot?.tertiary].compactMap(\.self) +
+            (snapshot?.extraRateWindows ?? []).filter(\.usageKnown).map(\.window))
+            .filter(\.usedPercent.isFinite)
     }
 
     nonisolated static func switcherWeeklyMetricPercent(

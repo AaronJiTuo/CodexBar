@@ -24,14 +24,47 @@ extension StatusItemController {
             {
                 countdownResetDates += self.menuBarLayoutResetDates(for: provider, now: now, absolute: false)
                 absoluteResetDates += self.menuBarLayoutResetDates(for: provider, now: now, absolute: true)
+                let snapshot = self.menuBarUsageSource(for: provider).snapshot
+                let windows = self.menuBarLayoutWindows(provider: provider, snapshot: snapshot, now: now)
                 delays += self.menuBarConditionalResetDelays(
-                    provider: provider,
                     resolution: resolution,
+                    snapshot: snapshot,
+                    windows: windows,
                     now: now)
                 delays += self.menuBarConditionalElapsedDelays(
                     provider: provider,
                     resolution: resolution,
                     now: now)
+                continue
+            }
+        }
+
+        if let selected = self.mergedIconSelectedUserPluginForLayoutRefresh() {
+            let resolution = self.settings.menuBarLayoutResolutionForUserPlugin()
+            countdownResetDates += self.userPluginMenuBarLayoutResetDates(
+                snapshot: selected.snapshot,
+                now: now,
+                absolute: false)
+            absoluteResetDates += self.userPluginMenuBarLayoutResetDates(
+                snapshot: selected.snapshot,
+                now: now,
+                absolute: true)
+            let windows = self.userPluginMenuBarLayoutWindows(snapshot: selected.snapshot)
+            delays += self.menuBarConditionalResetDelays(
+                resolution: resolution,
+                snapshot: selected.snapshot,
+                windows: windows,
+                now: now)
+            delays += self.menuBarConditionalElapsedDelays(
+                resolution: resolution,
+                now: now)
+        }
+
+        for provider in providers {
+            let resolution = self.renderedMenuBarLayoutResolution(for: provider)
+            if !resolution.usesLegacyRendering,
+               self.settings.menuBarIconStyle == .iconAndPercent
+            {
                 continue
             }
 
@@ -122,8 +155,9 @@ extension StatusItemController {
     /// refresh. Run-out predicates are deliberately excluded: their estimate drifts with usage rather
     /// than crossing a fixed instant, and `menuBarPaceRefreshDelays` already covers that lane.
     private func menuBarConditionalResetDelays(
-        provider: UsageProvider,
         resolution: MenuBarLayoutResolution,
+        snapshot: UsageSnapshot?,
+        windows: MenuBarLayoutWindows,
         now: Date)
         -> [TimeInterval]
     {
@@ -132,8 +166,6 @@ extension StatusItemController {
             .filter { $0.metric.kind == .hours && $0.metric != .runsOutIn }
         guard !predicates.isEmpty else { return [] }
 
-        let snapshot = self.menuBarUsageSource(for: provider).snapshot
-        let windows = self.menuBarLayoutWindows(provider: provider, snapshot: snapshot, now: now)
         let scopedWeekly = MenuBarLayoutSemanticWindowResolver
             .scopedWeeklyNamedWindow(snapshot: snapshot)?.window
         return predicates.compactMap { predicate -> TimeInterval? in
@@ -232,6 +264,14 @@ extension StatusItemController {
         -> [TimeInterval]
     {
         guard !self.menuBarUsageSource(for: provider).isFleet else { return [] }
+        return self.menuBarConditionalElapsedDelays(resolution: resolution, now: now)
+    }
+
+    private func menuBarConditionalElapsedDelays(
+        resolution: MenuBarLayoutResolution,
+        now: Date)
+        -> [TimeInterval]
+    {
         let metrics = self.referencedConditionalMetrics(resolution: resolution)
         let tokens = resolution.layout.flattenedTokens(conditionals: self.settings.menuBarLayoutConditionals)
         guard metrics.contains(where: \.isClockDerivedRate)

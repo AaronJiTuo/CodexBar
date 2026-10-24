@@ -89,6 +89,10 @@ extension StatusItemController {
         now: Date = .init())
         -> Bool?
     {
+        guard plugin.manifest.menuBarBalanceUsesPrepaidCost else {
+            statusItem.length = NSStatusItem.variableLength
+            return nil
+        }
         let resolution = self.settings.menuBarLayoutResolutionForUserPlugin()
         guard !resolution.usesLegacyRendering,
               self.settings.menuBarIconStyle == .iconAndPercent,
@@ -103,8 +107,8 @@ extension StatusItemController {
             plugin: plugin,
             snapshot: snapshot,
             now: now)
-        let options = self.menuBarLayoutRenderOptions(
-            for: .codex,
+        let options = self.menuBarLayoutRenderOptionsForUserPlugin(
+            instanceID: plugin.manifest.id,
             button: button,
             now: now)
         let rendered = self.menuBarLayoutRenderer.render(
@@ -136,29 +140,23 @@ extension StatusItemController {
     {
         let instanceID = plugin.manifest.id
         let showsOptionalCredits = self.settings.showOptionalCreditsAndExtraUsage
-        let automaticWindow = snapshot?.primary ?? snapshot?.secondary ?? snapshot?.tertiary
-        let automatic = MenuBarLayoutRenderWindow(automaticWindow)
+        let windows = StatusItemController.userPluginMenuBarLayoutWindows(snapshot: snapshot)
+        let automatic = MenuBarLayoutRenderWindow(windows.automatic)
         let balanceAmounts = UserProviderPluginMenuBarBalance.balanceAmountsUSD(
             for: instanceID,
             snapshot: snapshot,
             showsOptionalCredits: showsOptionalCredits)
         return MenuBarLayoutRenderData(
-            provider: .codex,
+            provider: .synthetic,
             iconKey: plugin.sourceHash,
             providerName: plugin.manifest.name,
-            accountLabel: {
-                guard !self.settings.hidePersonalInfo else { return nil }
-                let label = snapshot?.identity?.accountEmail?
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                guard let label, !label.isEmpty else { return nil }
-                return label
-            }(),
-            laneLabels: MenuBarLayoutLaneLabels(provider: .codex, snapshot: snapshot),
-            primary: MenuBarLayoutRenderWindow(snapshot?.primary),
-            secondary: MenuBarLayoutRenderWindow(snapshot?.secondary),
-            tertiary: MenuBarLayoutRenderWindow(snapshot?.tertiary),
-            session: MenuBarLayoutRenderWindow(snapshot?.primary),
-            weekly: MenuBarLayoutRenderWindow(snapshot?.secondary),
+            accountLabel: self.userPluginMenuBarLayoutAccountLabel(snapshot: snapshot),
+            laneLabels: MenuBarLayoutLaneLabels(userPluginSnapshot: snapshot),
+            primary: MenuBarLayoutRenderWindow(windows.primary),
+            secondary: MenuBarLayoutRenderWindow(windows.secondary),
+            tertiary: MenuBarLayoutRenderWindow(windows.tertiary),
+            session: MenuBarLayoutRenderWindow(windows.session),
+            weekly: MenuBarLayoutRenderWindow(windows.weekly),
             scopedWeekly: nil,
             scopedWeeklyTitle: nil,
             automatic: automatic,
@@ -186,6 +184,85 @@ extension StatusItemController {
                 balanceUsedUSD: balanceAmounts.used,
                 costTodayUSD: nil,
                 cost30dUSD: nil))
+    }
+
+    func userPluginMenuBarLayoutWindows(snapshot: UsageSnapshot?) -> MenuBarLayoutWindows {
+        StatusItemController.userPluginMenuBarLayoutWindows(snapshot: snapshot)
+    }
+
+    func userPluginMenuBarLayoutAccountLabel(snapshot: UsageSnapshot?) -> String? {
+        guard !self.settings.hidePersonalInfo else { return nil }
+        let label = snapshot?.identity?.accountEmail?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let label, !label.isEmpty else { return nil }
+        return label
+    }
+
+    func userPluginMenuBarLayoutResetDates(
+        snapshot: UsageSnapshot?,
+        now: Date,
+        absolute: Bool? = nil) -> [Date]
+    {
+        let resolution = self.settings.menuBarLayoutResolutionForUserPlugin()
+        let windows = self.userPluginMenuBarLayoutWindows(snapshot: snapshot)
+        let tokens = resolution.layout
+            .flattenedTokens(conditionals: self.settings.menuBarLayoutConditionals)
+        let selections = Set(tokens.filter { absolute == nil || $0.resetIsAbsolute == absolute }
+            .compactMap(\.resetWindow))
+        return PercentWindow.allCases.filter(selections.contains).compactMap {
+            windows.resetWindow($0, snapshot: snapshot)?.resetsAt
+        }
+    }
+
+    func userPluginUsesStoredMenuBarLayout(_ plugin: UserProviderPlugin) -> Bool {
+        plugin.manifest.menuBarBalanceUsesPrepaidCost
+            && self.settings.menuBarIconStyle == .iconAndPercent
+            && !self.settings.menuBarLayoutResolutionForUserPlugin().usesLegacyRendering
+    }
+
+    func mergedIconSelectedUserPluginForLayoutRefresh() -> (plugin: UserProviderPlugin, snapshot: UsageSnapshot?)? {
+        guard self.shouldMergeIcons,
+              self.settings.menuBarIconStyle == .iconAndPercent
+        else { return nil }
+        let selected = self.primaryProviderForUnifiedIcon()
+        guard let plugin = UserProviderPluginRegistry.plugin(for: selected),
+              self.userPluginUsesStoredMenuBarLayout(plugin)
+        else { return nil }
+        return (plugin, self.store.menuBarSnapshot(for: selected))
+    }
+
+    func menuBarLayoutRenderOptionsForUserPlugin(
+        instanceID: ProviderInstanceID,
+        button: NSButton?,
+        now: Date)
+        -> MenuBarLayoutRenderOptions
+    {
+        let appearanceName = (button?.effectiveAppearance ?? NSApp.effectiveAppearance).name.rawValue
+        return MenuBarLayoutRenderOptions(
+            size: self.settings.menuBarLayoutSize,
+            highContrast: self.shouldUseHighContrastStatusItemContent
+                || (self.settings.menuBarColorByProvider && (self.settings.menuBarHighContrastOnInactiveDisplays
+                        || NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast)),
+            showUsed: self.settings.usageBarsShowUsed,
+            conditionals: self.settings.menuBarLayoutConditionals,
+            appearanceName: appearanceName,
+            isDebugApp: Self.isDebugApp(bundleIdentifier: Bundle.main.bundleIdentifier),
+            isStale: self.store.errors[instanceID] != nil,
+            isHighlighted: self.isStatusItemHighlighted(for: instanceID, button: button),
+            now: now,
+            verticalAdjustment: self.settings.menuBarLayoutVerticalAdjustment,
+            colorPace: self.settings.menuBarColorPace,
+            colorByProvider: false,
+            forceStackedStyle: false,
+            monospacedDigits: self.settings.menuBarLayoutMonospacedDigits,
+            showWindowLabels: self.settings.menuBarLayoutShowWindowLabels)
+    }
+
+    func isStatusItemHighlighted(for instanceID: ProviderInstanceID, button: NSButton?) -> Bool {
+        if let menu = self.shouldMergeIcons ? self.mergedMenu : self.providerMenus[instanceID] {
+            return self.menuSession.menuInteractionGeneration(for: ObjectIdentifier(menu)) != nil
+        }
+        return button?.isHighlighted == true
     }
 
     private var mergedIconPresentation: MergedIconPresentation {
