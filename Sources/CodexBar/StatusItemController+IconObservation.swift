@@ -539,7 +539,9 @@ extension StatusItemController {
                 case .tertiary: windows.tertiary
                 }
                 let percent = Self.iconSignatureValue(Self.pluginWindowIconPercent(window, showUsed: showUsed))
-                let metadata = Self.pluginRateWindowRenderMetadataSignature(window)
+                let metadata = Self.pluginRateWindowRenderMetadataSignature(
+                    window,
+                    showWindowLabels: self.settings.menuBarLayoutShowWindowLabels)
                 return "\(lane.rawValue)=\(percent)@\(metadata)"
             }
             .joined(separator: ",")
