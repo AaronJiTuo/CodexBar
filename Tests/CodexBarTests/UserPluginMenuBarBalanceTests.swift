@@ -296,12 +296,15 @@ import Testing
         settings.menuBarIconStyle = .iconAndPercent
         settings.menuBarLayoutShowWindowLabels = true
         settings.menuBarLayout = MenuBarLayout(lines: [[.percent(window: .session)]])
+        settings.unifiedIconSource = .currentSelection
         settings.selectedMenuProvider = plugin.manifest.id
         let fetcher = UsageFetcher()
         let store = UsageStore(
             fetcher: fetcher,
             browserDetection: BrowserDetection(cacheTTL: 0),
             settings: settings)
+        store.refreshUserPluginDiscovery(loader: fixture.loader(transport: EmptyJSONTransport()))
+        settings.setPluginEnabled(plugin.manifest.id, enabled: true)
         let controller = StatusItemController(
             store: store,
             settings: settings,
@@ -326,6 +329,7 @@ import Testing
                     loginMethod: nil))
         }
         store.snapshots[plugin.manifest.id] = snapshot(windowMinutes: 300)
+        #expect(controller.primaryProviderForUnifiedIcon() == plugin.manifest.id)
         let fiveHour = controller.storeIconObservationSignature()
         store.snapshots[plugin.manifest.id] = snapshot(windowMinutes: 60)
         let oneHour = controller.storeIconObservationSignature()
