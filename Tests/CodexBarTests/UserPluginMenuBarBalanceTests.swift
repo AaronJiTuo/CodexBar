@@ -227,6 +227,7 @@ import Testing
         settings.mergeIcons = true
         settings.menuBarShowsBrandIconWithPercent = true
         settings.menuBarIconStyle = .iconAndPercent
+        settings.showOptionalCreditsAndExtraUsage = true
         settings.menuBarLayout = MenuBarLayout(lines: [[.icon, .percent(window: .automatic)]])
         settings.selectedMenuProvider = plugin.manifest.id
         let fetcher = UsageFetcher()
