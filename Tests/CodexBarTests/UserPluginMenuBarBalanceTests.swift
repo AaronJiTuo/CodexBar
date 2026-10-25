@@ -192,6 +192,7 @@ import Testing
                 windowMinutes: 300,
                 resetsAt: resetAt,
                 resetDescription: nil),
+            secondary: nil,
             updatedAt: now)
         store.snapshots[plugin.manifest.id] = snapshot
         #expect(controller.userPluginUsesStoredMenuBarLayout(plugin))
