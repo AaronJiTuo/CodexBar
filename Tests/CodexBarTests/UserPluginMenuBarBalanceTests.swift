@@ -120,7 +120,7 @@ import Testing
     @Test
     func `legacy provider cost snapshot decodes without plugin balance opt in field`() throws {
         let json = """
-        {"used":1,"limit":10,"currencyCode":"USD","updatedAt":"2020-01-01T00:00:00Z"}
+        {"used":1,"limit":10,"currencyCode":"USD","updatedAt":0}
         """
         let decoded = try JSONDecoder().decode(ProviderCostSnapshot.self, from: Data(json.utf8))
         #expect(decoded.pluginMenuBarBalanceUsesPrepaidCost == nil)
@@ -199,6 +199,72 @@ import Testing
         #expect(dates == [resetAt])
         controller.scheduleMenuBarCountdownRefreshIfNeeded(now: now)
         #expect(controller._test_isMenuBarCountdownRefreshScheduled())
+    }
+
+    @MainActor
+    @Test
+    func `stored layout observation signature tracks automatic balance fallback`() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let plugin = try Self.loadPlugin(
+            fixture: fixture,
+            name: "balance-only-meter.js",
+            source: """
+            defineProvider({
+              id: "balance-only-meter",
+              name: "Balance Only",
+              menuBarBalanceUsesPrepaidCost: true,
+              endpoints: ["https://balance-only-meter.example"],
+              settings: [],
+              fetchUsage() {
+                return { cost: { used: 0, currency: "CNY", balance: 9.21 } };
+              },
+            });
+            """)
+        let settings = testSettingsStore(suiteName: "UserPluginMenuBarBalanceTests-automatic-balance")
+        settings.statusChecksEnabled = false
+        settings.mergeIcons = true
+        settings.menuBarShowsBrandIconWithPercent = true
+        settings.menuBarIconStyle = .iconAndPercent
+        settings.menuBarLayout = MenuBarLayout(lines: [[.icon, .percent(window: .automatic)]])
+        settings.selectedMenuProvider = plugin.manifest.id
+        let fetcher = UsageFetcher()
+        let store = UsageStore(
+            fetcher: fetcher,
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings)
+        let controller = StatusItemController(
+            store: store,
+            settings: settings,
+            account: fetcher.loadAccountInfo(),
+            updater: DisabledUpdaterController(),
+            preferencesSelection: PreferencesSelection(),
+            statusBar: testStatusBar())
+        defer { controller.releaseStatusItemsForTesting() }
+        let updatedAt = Date()
+        func snapshot(balance: Double) -> UsageSnapshot {
+            UsageSnapshot(
+                providerCost: ProviderCostSnapshot(
+                    used: 0,
+                    limit: 0,
+                    currencyCode: "CNY",
+                    balance: balance,
+                    pluginMenuBarBalanceUsesPrepaidCost: true,
+                    updatedAt: updatedAt),
+                updatedAt: updatedAt,
+                identity: ProviderIdentitySnapshot(
+                    providerID: plugin.manifest.id,
+                    accountEmail: nil,
+                    accountOrganization: nil,
+                    loginMethod: nil))
+        }
+        store.snapshots[plugin.manifest.id] = snapshot(balance: 9.21)
+        let first = controller.storeIconObservationSignature()
+        store.snapshots[plugin.manifest.id] = snapshot(balance: 8.21)
+        let second = controller.storeIconObservationSignature()
+        #expect(first != second)
+        #expect(first.contains("layoutBalance="))
+        #expect(second.contains("layoutBalance="))
     }
 
     @MainActor
@@ -293,6 +359,8 @@ import Testing
             preferencesSelection: PreferencesSelection(),
             statusBar: testStatusBar())
         defer { controller.releaseStatusItemsForTesting() }
+        let binding = try plugin.approvalBinding(settings: [:])
+        try fixture.approvals.record(binding)
         let snapshot = try await plugin.fetchUsage(settings: [:], secrets: [:], approvalStore: fixture.approvals)
         store.snapshots[plugin.manifest.id] = snapshot
         let data = controller.userPluginMenuBarLayoutRenderData(plugin: plugin, snapshot: snapshot)

@@ -232,11 +232,12 @@ extension StatusItemController {
     {
         let resolution = self.settings.menuBarLayoutResolutionForUserPlugin()
         guard !resolution.usesLegacyRendering else { return nil }
-        let showsBalance = resolution.layout
-            .flattenedTokens(conditionals: self.settings.menuBarLayoutConditionals)
-            .contains(.balance)
-            || self.referencedConditionalMetrics(resolution: resolution).contains(.balance)
-        guard showsBalance else { return nil }
+        let tokens = resolution.layout.flattenedTokens(conditionals: self.settings.menuBarLayoutConditionals)
+        let metrics = self.referencedConditionalMetrics(resolution: resolution)
+        let showsBalance = tokens.contains(.balance) || metrics.contains(.balance)
+        // Automatic percent renders `automaticText` (prepaid balance) when no quota window is active.
+        let showsAutomaticBalanceFallback = tokens.contains(.percent(window: .automatic))
+        guard showsBalance || showsAutomaticBalanceFallback else { return nil }
         let showsOptionalCredits = self.settings.showOptionalCreditsAndExtraUsage
         let amounts = UserProviderPluginMenuBarBalance.balanceAmountsUSD(
             for: instanceID,
