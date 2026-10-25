@@ -67,7 +67,7 @@ import Testing
         #expect(UserProviderPluginMenuBarBalance.balance(
             for: plugin.manifest.id,
             snapshot: snapshot,
-            showsOptionalCredits: true) == "CN¥9.21")
+            showsOptionalCredits: true) == "¥9.21")
     }
 
     private static func loadPlugin(fixture: Fixture, name: String, source: String) throws -> UserProviderPlugin {

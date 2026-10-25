@@ -35,12 +35,12 @@ import Testing
             secrets: [:],
             approvalStore: fixture.approvals)
         let instanceID = plugin.manifest.id
-        #expect(UserProviderPluginMenuBarBalance.balance(for: instanceID, snapshot: snapshot) == "CN¥9.21")
+        #expect(UserProviderPluginMenuBarBalance.balance(for: instanceID, snapshot: snapshot) == "¥9.21")
         #expect(StatusItemController.userPluginMenuBarBrandTitle(
             instanceID: instanceID,
             snapshot: snapshot,
             showUsed: false,
-            showsOptionalCredits: true) == "CN¥9.21")
+            showsOptionalCredits: true) == "¥9.21")
         #expect(StatusItemController.pluginSwitcherMetricPercent(snapshot: snapshot, showUsed: false) == nil)
     }
 

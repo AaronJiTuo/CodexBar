@@ -17,7 +17,14 @@ public enum UserProviderPluginMenuBarBalance {
             showsOptionalCredits: showsOptionalCredits),
               let balance = cost.balance
         else { return nil }
-        return UsageFormatter.currencyString(balance, currencyCode: cost.currencyCode)
+        return self.formattedBalance(balance, currencyCode: cost.currencyCode)
+    }
+
+    /// Menu-bar space is tight; CNY drops the en_US `CN` disambiguation prefix (`¥9.21`, not `CN¥9.21`).
+    static func formattedBalance(_ balance: Double, currencyCode: String) -> String {
+        let text = UsageFormatter.currencyString(balance, currencyCode: currencyCode)
+        guard currencyCode.caseInsensitiveCompare("CNY") == .orderedSame else { return text }
+        return text.replacingOccurrences(of: "CN¥", with: "¥")
     }
 
     public static func balanceAmountsUSD(
