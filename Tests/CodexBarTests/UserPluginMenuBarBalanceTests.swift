@@ -405,7 +405,7 @@ import Testing
               settings: [],
               fetchUsage() {
                 return {
-                  identity: { accountEmail: "meter@example.com" },
+                  identity: { email: "meter@example.com" },
                   cost: { used: 0, currency: "USD", balance: 3 },
                 };
               },
