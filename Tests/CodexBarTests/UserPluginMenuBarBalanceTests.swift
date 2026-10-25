@@ -245,6 +245,8 @@ import Testing
         let updatedAt = Date()
         func snapshot(balance: Double) -> UsageSnapshot {
             UsageSnapshot(
+                primary: nil,
+                secondary: nil,
                 providerCost: ProviderCostSnapshot(
                     used: 0,
                     limit: 0,
@@ -314,6 +316,7 @@ import Testing
                     windowMinutes: windowMinutes,
                     resetsAt: nil,
                     resetDescription: nil),
+                secondary: nil,
                 updatedAt: Date(),
                 identity: ProviderIdentitySnapshot(
                     providerID: plugin.manifest.id,
