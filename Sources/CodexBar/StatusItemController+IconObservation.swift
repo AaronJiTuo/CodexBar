@@ -69,6 +69,9 @@ extension StatusItemController {
                 let layoutCondWindows = self.storedUserPluginMenuBarLayoutConditionalWindowSignature(
                     snapshot: snapshot,
                     windows: windows)
+                let layoutWindowMeta = self.storedUserPluginMenuBarLayoutWindowMetadataSignature(
+                    snapshot: snapshot,
+                    windows: windows)
                 return [
                     instanceID.rawValue,
                     "automatic=\(Self.iconSignatureValue(automaticPercent))",
@@ -82,6 +85,7 @@ extension StatusItemController {
                     "layoutLanes=\(layoutLanes ?? "nil")",
                     "layoutResets=\(layoutResets ?? "nil")",
                     "layoutCondWindows=\(layoutCondWindows ?? "nil")",
+                    "layoutWindowMeta=\(layoutWindowMeta ?? "nil")",
                     "source=\(source)",
                 ].joined(separator: "|")
             }
@@ -489,6 +493,21 @@ extension StatusItemController {
         return showUsed ? window.usedPercent : window.remainingPercent
     }
 
+    private static func pluginRateWindowRenderMetadataSignature(
+        _ window: RateWindow?,
+        showWindowLabels: Bool) -> String
+    {
+        guard let window else { return "nil" }
+        let minutes = showWindowLabels ? window.windowMinutes.map(String.init) ?? "nil" : "unused"
+        let title = showWindowLabels ? window.title ?? "nil" : "unused"
+        return [
+            "minutes=\(minutes)",
+            "title=\(title)",
+            "reset=\(window.resetDescription ?? "nil")",
+            "resetsAt=\(Self.exactSignatureValue(window.resetsAt?.timeIntervalSince1970))",
+        ].joined(separator: "/")
+    }
+
     private func storedUserPluginMenuBarLayoutAccountSignature(snapshot: UsageSnapshot?) -> String? {
         let resolution = self.settings.menuBarLayoutResolutionForUserPlugin()
         guard !resolution.usesLegacyRendering,
@@ -519,7 +538,34 @@ extension StatusItemController {
                 case .secondary: windows.secondary
                 case .tertiary: windows.tertiary
                 }
-                return "\(lane.rawValue)=\(Self.iconSignatureValue(Self.pluginWindowIconPercent(window, showUsed: showUsed)))"
+                let percent = Self.iconSignatureValue(Self.pluginWindowIconPercent(window, showUsed: showUsed))
+                let metadata = Self.pluginRateWindowRenderMetadataSignature(window)
+                return "\(lane.rawValue)=\(percent)@\(metadata)"
+            }
+            .joined(separator: ",")
+    }
+
+    /// Window duration, title, and reset copy that prefix rendered percent tokens when labels are enabled.
+    private func storedUserPluginMenuBarLayoutWindowMetadataSignature(
+        snapshot: UsageSnapshot?,
+        windows: MenuBarLayoutWindows) -> String?
+    {
+        let resolution = self.settings.menuBarLayoutResolutionForUserPlugin()
+        guard !resolution.usesLegacyRendering else { return nil }
+        let tokens = resolution.layout.flattenedTokens(conditionals: self.settings.menuBarLayoutConditionals)
+        let percentWindows = Set(tokens.compactMap { token -> PercentWindow? in
+            guard case let .percent(window) = token else { return nil }
+            return window
+        })
+        guard !percentWindows.isEmpty else { return nil }
+        let showLabels = self.settings.menuBarLayoutShowWindowLabels
+        return PercentWindow.allCases
+            .filter(percentWindows.contains)
+            .map { window in
+                let rateWindow = windows.resetWindow(window, snapshot: snapshot)
+                return "\(window.rawValue)=\(Self.pluginRateWindowRenderMetadataSignature(
+                    rateWindow,
+                    showWindowLabels: showLabels))"
             }
             .joined(separator: ",")
     }

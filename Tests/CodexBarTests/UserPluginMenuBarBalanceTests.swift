@@ -269,6 +269,68 @@ import Testing
 
     @MainActor
     @Test
+    func `stored layout observation signature tracks session window duration labels`() async throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let plugin = try Self.loadPlugin(
+            fixture: fixture,
+            name: "duration-meter.js",
+            source: """
+            defineProvider({
+              id: "duration-meter",
+              name: "Duration Meter",
+              menuBarBalanceUsesPrepaidCost: true,
+              endpoints: ["https://duration-meter.example"],
+              settings: [],
+              fetchUsage() { return {}; },
+            });
+            """)
+        let settings = testSettingsStore(suiteName: "UserPluginMenuBarBalanceTests-window-duration")
+        settings.statusChecksEnabled = false
+        settings.mergeIcons = true
+        settings.menuBarShowsBrandIconWithPercent = true
+        settings.menuBarIconStyle = .iconAndPercent
+        settings.menuBarLayoutShowWindowLabels = true
+        settings.menuBarLayout = MenuBarLayout(lines: [[.percent(window: .session)]])
+        settings.selectedMenuProvider = plugin.manifest.id
+        let fetcher = UsageFetcher()
+        let store = UsageStore(
+            fetcher: fetcher,
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings)
+        let controller = StatusItemController(
+            store: store,
+            settings: settings,
+            account: fetcher.loadAccountInfo(),
+            updater: DisabledUpdaterController(),
+            preferencesSelection: PreferencesSelection(),
+            statusBar: testStatusBar())
+        defer { controller.releaseStatusItemsForTesting() }
+        func snapshot(windowMinutes: Int) -> UsageSnapshot {
+            UsageSnapshot(
+                primary: RateWindow(
+                    usedPercent: 20,
+                    windowMinutes: windowMinutes,
+                    resetsAt: nil,
+                    resetDescription: nil),
+                updatedAt: Date(),
+                identity: ProviderIdentitySnapshot(
+                    providerID: plugin.manifest.id,
+                    accountEmail: nil,
+                    accountOrganization: nil,
+                    loginMethod: nil))
+        }
+        store.snapshots[plugin.manifest.id] = snapshot(windowMinutes: 300)
+        let fiveHour = controller.storeIconObservationSignature()
+        store.snapshots[plugin.manifest.id] = snapshot(windowMinutes: 60)
+        let oneHour = controller.storeIconObservationSignature()
+        #expect(fiveHour != oneHour)
+        #expect(fiveHour.contains("layoutWindowMeta=session=minutes=300"))
+        #expect(oneHour.contains("layoutWindowMeta=session=minutes=60"))
+    }
+
+    @MainActor
+    @Test
     func `stored layout observation signature tracks secondary lane percent`() async throws {
         let fixture = try Fixture()
         defer { fixture.remove() }
