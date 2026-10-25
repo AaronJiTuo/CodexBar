@@ -4,7 +4,7 @@ import CodexBarCore
 import Foundation
 import Testing
 
-@Suite struct UserPluginMenuBarBalanceTests {
+@Suite(.serialized) struct UserPluginMenuBarBalanceTests {
     @Test
     func `opt in plugin balance renders in brand title`() async throws {
         let fixture = try Fixture()
