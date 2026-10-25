@@ -565,9 +565,10 @@ extension StatusItemController {
             .filter(percentWindows.contains)
             .map { window in
                 let rateWindow = windows.resetWindow(window, snapshot: snapshot)
-                return "\(window.rawValue)=\(Self.pluginRateWindowRenderMetadataSignature(
+                let metadata = Self.pluginRateWindowRenderMetadataSignature(
                     rateWindow,
-                    showWindowLabels: showLabels))"
+                    showWindowLabels: showLabels)
+                return "\(window.rawValue)=\(metadata)"
             }
             .joined(separator: ",")
     }
